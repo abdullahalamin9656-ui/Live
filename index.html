@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyTube</title>
+<style>
+:root{--bg:#fff;--fg:#111;--card:#f2f2f2;--acc:#e11d48;--mut:#666}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#f1f1f1;--card:#222;--mut:#aaa}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;position:sticky;top:0;background:var(--bg);z-index:5;gap:8px}
+h1{margin:0;font-size:20px}h1 span{color:var(--acc)}
+button,input{font:inherit}
+button{background:var(--acc);color:#fff;border:0;border-radius:20px;padding:9px 14px;cursor:pointer}
+button.g{background:var(--card);color:var(--fg)}
+main{max-width:900px;margin:0 auto;padding:0 14px 40px}
+.box{display:none;flex-direction:column;gap:8px;background:var(--card);padding:12px;border-radius:12px;margin-bottom:14px}
+.box.on{display:flex}
+input{padding:10px;border-radius:8px;border:1px solid var(--mut);background:var(--bg);color:var(--fg);width:100%}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.card{background:var(--card);border-radius:12px;overflow:hidden;cursor:pointer}
+.card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
+.in{padding:10px}.in b{display:block;margin-bottom:4px}.in small{color:var(--mut)}
+#pl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:20;flex-direction:column;justify-content:center;padding:12px}
+#pl.on{display:flex}
+#pl .w{max-width:900px;width:100%;margin:0 auto;color:#fff}
+#pl iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:#000}
+#err{color:var(--acc);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+<h1>▶ My<span>Tube</span></h1>
+<div><button id="addBtn">+ ভিডিও</button> <button class="g" id="authBtn">লগইন</button></div>
+</header>
+<main>
+<div class="box" id="authBox">
+<input id="em" type="email" placeholder="ইমেইল">
+<input id="pw" type="password" placeholder="পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)">
+<button id="login">লগইন</button>
+<button class="g" id="signup">নতুন অ্যাকাউন্ট খুলুন</button>
+</div>
+<div class="box" id="addBox">
+<input id="t" placeholder="ভিডিওর নাম" maxlength="100">
+<input id="u" placeholder="YouTube লিংক">
+<button id="post">পোস্ট করুন</button>
+</div>
+<div id="err"></div>
+<div id="grid"></div>
+</main>
+<div id="pl"><div class="w"><h3 id="pt"></h3><div id="pf"></div><p><button class="g" id="cl">বন্ধ করুন</button></p></div></div>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,addDoc,query,orderBy,onSnapshot,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ===== এখানে আপনার Firebase config বসান =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDktEiSDZ1KuHVmC19JsJESMf-vEom5S-c",
+  authDomain: "live-10ce9.firebaseapp.com",
+  projectId: "live-10ce9",
+  appId: "1:861071115262:web:10c06c9794dfa03225f6af"
+};
+// =============================================
+
+const app=initializeApp(firebaseConfig);
+const auth=getAuth(app), db=getFirestore(app);
+const $=i=>document.getElementById(i);
+let user=null;
+
+function pid(u){const m=u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);return m?m[1]:null}
+function err(m){$("err").textContent=m||""}
+
+onAuthStateChanged(auth,u=>{
+  user=u;
+  $("authBtn").textContent=u?"লগআউট":"লগইন";
+  if(u)$("authBox").classList.remove("on");
+});
+
+$("authBtn").onclick=()=>{ if(user){signOut(auth)} else {$("authBox").classList.toggle("on")} };
+$("addBtn").onclick=()=>{
+  if(!user){$("authBox").classList.add("on");err("আগে লগইন করুন");return}
+  err("");$("addBox").classList.toggle("on");
+};
+$("login").onclick=async()=>{
+  try{err("");await signInWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("লগইন হয়নি: ইমেইল/পাসওয়ার্ড দেখুন")}
+};
+$("signup").onclick=async()=>{
+  try{err("");await createUserWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("অ্যাকাউন্ট খোলা যায়নি: "+(e.code||""))}
+};
+$("post").onclick=async()=>{
+  const vid=pid($("u").value.trim()), title=$("t").value.trim();
+  if(!title||!vid){err("নাম আর সঠিক YouTube লিংক দিন");return}
+  try{
+    await addDoc(collection(db,"videos"),{title,vid,by:user.email.split("@")[0],uid:user.uid,at:serverTimestamp()});
+    $("t").value="";$("u").value="";$("addBox").classList.remove("on");err("");
+  }catch(e){err("পোস্ট হয়নি: "+(e.code||""))}
+};
+
+function play(v){
+  $("pt").textContent=v.title;
+  $("pf").innerHTML='<iframe src="https://www.youtube-nocookie.com/embed/'+v.vid+'?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+  $("pl").classList.add("on");
+}
+$("cl").onclick=()=>{$("pl").classList.remove("on");$("pf").innerHTML=""};
+
+onSnapshot(query(collection(db,"videos"),orderBy("at","desc")),snap=>{
+  const g=$("grid");g.innerHTML="";
+  if(snap.empty){g.textContent="এখনো কোনো ভিডিও নেই।";return}
+  snap.forEach(d=>{
+    const v=d.data();
+    const c=document.createElement("div");c.className="card";
+    const img=document.createElement("img");img.src="https://i.ytimg.com/vi/"+v.vid+"/mqdefault.jpg";img.loading="lazy";
+    const info=document.createElement("div");info.className="in";
+    const b=document.createElement("b");b.textContent=v.title;
+    const s=document.createElement("small");s.textContent=v.by||"";
+    info.append(b,s);c.append(img,info);
+    c.onclick=()=>play(v);
+    g.appendChild(c);
+  });
+},e=>err("ভিডিও লোড হয়নি: "+(e.code||"")));
+</script>
+</body>
+</html>
