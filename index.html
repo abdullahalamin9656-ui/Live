@@ -10,28 +10,34 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}
 header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;position:sticky;top:0;background:var(--bg);z-index:5;gap:8px}
-h1{margin:0;font-size:20px}h1 span{color:var(--acc)}
+h1{margin:0;font-size:20px}
 button,input{font:inherit}
 button{background:var(--acc);color:#fff;border:0;border-radius:20px;padding:9px 14px;cursor:pointer}
 button.g{background:var(--card);color:var(--fg)}
+button.s{padding:5px 10px;font-size:13px}
 main{max-width:900px;margin:0 auto;padding:0 14px 40px}
 .box{display:none;flex-direction:column;gap:8px;background:var(--card);padding:12px;border-radius:12px;margin-bottom:14px}
 .box.on{display:flex}
 input{padding:10px;border-radius:8px;border:1px solid var(--mut);background:var(--bg);color:var(--fg);width:100%}
+#q{margin-bottom:12px;border-radius:20px}
 #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
 .card{background:var(--card);border-radius:12px;overflow:hidden;cursor:pointer}
 .card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
 .in{padding:10px}.in b{display:block;margin-bottom:4px}.in small{color:var(--mut)}
-#pl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:20;flex-direction:column;justify-content:center;padding:12px}
-#pl.on{display:flex}
-#pl .w{max-width:900px;width:100%;margin:0 auto;color:#fff}
+#pl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:20;overflow-y:auto;padding:12px}
+#pl.on{display:block}
+#pl .w{max-width:900px;margin:0 auto;color:#fff}
 #pl iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:#000}
-#err{color:var(--acc);font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.cm{border-top:1px solid #444;padding:8px 0;font-size:14px}
+.cm small{color:#aaa;display:block}
+#cin{background:#222;color:#fff;border-color:#555;flex:1}
+#err{color:var(--acc);font-size:14px;margin-bottom:8px}
 </style>
 </head>
 <body>
 <header>
-<h1>▶ My<span>Tube</span></h1>
+<h1 id="logo"></h1>
 <div><button id="addBtn">+ ভিডিও</button> <button class="g" id="authBtn">লগইন</button></div>
 </header>
 <main>
@@ -47,80 +53,162 @@ input{padding:10px;border-radius:8px;border:1px solid var(--mut);background:var(
 <button id="post">পোস্ট করুন</button>
 </div>
 <div id="err"></div>
+<input id="q" placeholder="🔍 ভিডিও খুঁজুন...">
 <div id="grid"></div>
 </main>
-<div id="pl"><div class="w"><h3 id="pt"></h3><div id="pf"></div><p><button class="g" id="cl">বন্ধ করুন</button></p></div></div>
+
+<div id="pl"><div class="w">
+<h3 id="pt"></h3>
+<div id="pf"></div>
+<div class="row">
+<button id="lk">♥ 0</button>
+<span id="vw"></span>
+<button class="g s" id="del" style="display:none">🗑 ডিলিট</button>
+<button class="g" id="cl" style="margin-left:auto">বন্ধ করুন</button>
+</div>
+<h4>কমেন্ট</h4>
+<div class="row"><input id="cin" placeholder="কমেন্ট লিখুন..." maxlength="300"><button id="csend">পাঠান</button></div>
+<div id="cms"></div>
+</div></div>
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,addDoc,query,orderBy,onSnapshot,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,addDoc,doc,updateDoc,deleteDoc,query,orderBy,onSnapshot,serverTimestamp,increment,arrayUnion,arrayRemove} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ===== এখানে আপনার Firebase config বসান =====
+// ===== সাইটের নাম ও রঙ এখানে বদলান =====
+const SITE_NAME = "MyTube";
+const ACCENT = "#e11d48";
+// =======================================
+
 const firebaseConfig = {
   apiKey: "AIzaSyDktEiSDZ1KuHVmC19JsJESMf-vEom5S-c",
   authDomain: "live-10ce9.firebaseapp.com",
   projectId: "live-10ce9",
   appId: "1:861071115262:web:10c06c9794dfa03225f6af"
 };
-// =============================================
 
 const app=initializeApp(firebaseConfig);
 const auth=getAuth(app), db=getFirestore(app);
 const $=i=>document.getElementById(i);
-let user=null;
+let user=null, vids=[], cur=null, unsubC=null;
+
+document.title=SITE_NAME;
+document.documentElement.style.setProperty("--acc",ACCENT);
+$("logo").textContent="▶ "+SITE_NAME;
 
 function pid(u){const m=u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);return m?m[1]:null}
 function err(m){$("err").textContent=m||""}
+function need(){if(!user){$("authBox").classList.add("on");err("আগে লগইন করুন");window.scrollTo(0,0);return false}return true}
 
 onAuthStateChanged(auth,u=>{
   user=u;
   $("authBtn").textContent=u?"লগআউট":"লগইন";
   if(u)$("authBox").classList.remove("on");
+  meta();
 });
 
 $("authBtn").onclick=()=>{ if(user){signOut(auth)} else {$("authBox").classList.toggle("on")} };
-$("addBtn").onclick=()=>{
-  if(!user){$("authBox").classList.add("on");err("আগে লগইন করুন");return}
-  err("");$("addBox").classList.toggle("on");
-};
-$("login").onclick=async()=>{
-  try{err("");await signInWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("লগইন হয়নি: ইমেইল/পাসওয়ার্ড দেখুন")}
-};
-$("signup").onclick=async()=>{
-  try{err("");await createUserWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("অ্যাকাউন্ট খোলা যায়নি: "+(e.code||""))}
-};
+$("addBtn").onclick=()=>{ if(!need())return; err("");$("addBox").classList.toggle("on") };
+$("login").onclick=async()=>{try{err("");await signInWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("লগইন হয়নি: ইমেইল/পাসওয়ার্ড দেখুন")}};
+$("signup").onclick=async()=>{try{err("");await createUserWithEmailAndPassword(auth,$("em").value,$("pw").value)}catch(e){err("অ্যাকাউন্ট খোলা যায়নি: "+(e.code||""))}};
 $("post").onclick=async()=>{
   const vid=pid($("u").value.trim()), title=$("t").value.trim();
   if(!title||!vid){err("নাম আর সঠিক YouTube লিংক দিন");return}
   try{
-    await addDoc(collection(db,"videos"),{title,vid,by:user.email.split("@")[0],uid:user.uid,at:serverTimestamp()});
+    await addDoc(collection(db,"videos"),{title,vid,by:user.email.split("@")[0],uid:user.uid,at:serverTimestamp(),views:0,likedBy:[]});
     $("t").value="";$("u").value="";$("addBox").classList.remove("on");err("");
   }catch(e){err("পোস্ট হয়নি: "+(e.code||""))}
 };
 
-function play(v){
-  $("pt").textContent=v.title;
-  $("pf").innerHTML='<iframe src="https://www.youtube-nocookie.com/embed/'+v.vid+'?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
-  $("pl").classList.add("on");
-}
-$("cl").onclick=()=>{$("pl").classList.remove("on");$("pf").innerHTML=""};
-
-onSnapshot(query(collection(db,"videos"),orderBy("at","desc")),snap=>{
-  const g=$("grid");g.innerHTML="";
-  if(snap.empty){g.textContent="এখনো কোনো ভিডিও নেই।";return}
-  snap.forEach(d=>{
-    const v=d.data();
+/* ---- লিস্ট + সার্চ ---- */
+function render(){
+  const k=$("q").value.trim().toLowerCase(), g=$("grid");
+  g.innerHTML="";
+  const list=vids.filter(v=>!k||(v.title||"").toLowerCase().includes(k));
+  if(!list.length){g.textContent=vids.length?"কিছু পাওয়া যায়নি।":"এখনো কোনো ভিডিও নেই।";return}
+  list.forEach(v=>{
     const c=document.createElement("div");c.className="card";
     const img=document.createElement("img");img.src="https://i.ytimg.com/vi/"+v.vid+"/mqdefault.jpg";img.loading="lazy";
     const info=document.createElement("div");info.className="in";
     const b=document.createElement("b");b.textContent=v.title;
-    const s=document.createElement("small");s.textContent=v.by||"";
+    const s=document.createElement("small");
+    s.textContent=(v.by||"")+" • 👁 "+(v.views||0)+" • ♥ "+((v.likedBy||[]).length);
     info.append(b,s);c.append(img,info);
     c.onclick=()=>play(v);
     g.appendChild(c);
   });
+}
+$("q").oninput=render;
+
+onSnapshot(query(collection(db,"videos"),orderBy("at","desc")),snap=>{
+  vids=snap.docs.map(d=>({id:d.id,...d.data()}));
+  render();
+  if(cur){const n=vids.find(v=>v.id===cur.id);if(n){cur=n;meta()}}
 },e=>err("ভিডিও লোড হয়নি: "+(e.code||"")));
+
+/* ---- প্লেয়ার ---- */
+function meta(){
+  if(!cur)return;
+  const liked=user&&(cur.likedBy||[]).includes(user.uid);
+  $("lk").textContent=(liked?"♥ ":"♡ ")+(cur.likedBy||[]).length;
+  $("vw").textContent="👁 "+(cur.views||0)+" ভিউ";
+  $("del").style.display=(user&&cur.uid===user.uid)?"":"none";
+}
+function play(v){
+  cur=v;
+  $("pt").textContent=v.title;
+  $("pf").innerHTML='<iframe src="https://www.youtube-nocookie.com/embed/'+v.vid+'?autoplay=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+  $("pl").classList.add("on");
+  meta();
+  updateDoc(doc(db,"videos",v.id),{views:increment(1)}).catch(()=>{});
+  loadComments(v.id);
+}
+function close(){
+  $("pl").classList.remove("on");$("pf").innerHTML="";
+  if(unsubC){unsubC();unsubC=null}
+  cur=null;
+}
+$("cl").onclick=close;
+
+$("lk").onclick=async()=>{
+  if(!need()){close();return}
+  const liked=(cur.likedBy||[]).includes(user.uid);
+  try{await updateDoc(doc(db,"videos",cur.id),{likedBy:liked?arrayRemove(user.uid):arrayUnion(user.uid)})}catch(e){}
+};
+$("del").onclick=async()=>{
+  if(!confirm("এই ভিডিও ডিলিট করবেন?"))return;
+  try{await deleteDoc(doc(db,"videos",cur.id));close()}catch(e){alert("ডিলিট হয়নি")}
+};
+
+/* ---- কমেন্ট ---- */
+function loadComments(id){
+  if(unsubC)unsubC();
+  unsubC=onSnapshot(query(collection(db,"videos",id,"comments"),orderBy("at","desc")),snap=>{
+    const box=$("cms");box.innerHTML="";
+    if(snap.empty){box.textContent="এখনো কোনো কমেন্ট নেই।";return}
+    snap.forEach(d=>{
+      const c=d.data(),el=document.createElement("div");el.className="cm";
+      const s=document.createElement("small");s.textContent=c.by||"";
+      const p=document.createElement("div");p.textContent=c.text;
+      el.append(s,p);
+      if(user&&c.uid===user.uid){
+        const x=document.createElement("button");x.className="g s";x.textContent="মুছুন";
+        x.onclick=()=>deleteDoc(doc(db,"videos",id,"comments",d.id)).catch(()=>{});
+        el.append(x);
+      }
+      box.appendChild(el);
+    });
+  },()=>{$("cms").textContent="কমেন্ট লোড হয়নি।"});
+}
+$("csend").onclick=async()=>{
+  if(!need()){close();return}
+  const text=$("cin").value.trim();if(!text)return;
+  try{
+    await addDoc(collection(db,"videos",cur.id,"comments"),{text,by:user.email.split("@")[0],uid:user.uid,at:serverTimestamp()});
+    $("cin").value="";
+  }catch(e){alert("কমেন্ট হয়নি")}
+};
 </script>
 </body>
 </html>
